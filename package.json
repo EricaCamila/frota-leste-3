@@ -61,7 +61,9 @@
     "leaflet": "latest",
     "firebase": "latest",
     "react-leaflet": "latest",
-    "chart.js": "latest"
+    "chart.js": "latest",
+    "react-big-calendar": "latest",
+    "moment": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
