@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useSidebar } from "@/components/sidebar"
+const imagem = "https://raw.githubusercontent.com/MIC-UFRR-Grupo/HandsOnAdvanced/refs/heads/dev/frontend/src/assets/maloca.png";
 
 export function Header() {
   const [currentTime, setCurrentTime] = useState(new Date())
@@ -48,6 +49,7 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-2">
+      <img src={imagem} width="108" height="50"/>
         <AlertSystem />
 
         <DropdownMenu>
