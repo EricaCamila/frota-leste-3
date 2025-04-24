@@ -4,6 +4,10 @@ import { useEffect } from "react"
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
+import { Heart } from "lucide-react"
+
+// Adicionar o import do filtro de Kalman
+import { filterHeartRate, checkHeartRateStatus } from "@/lib/kalman-filter"
 
 // Corrigir os ícones do Leaflet
 const fixLeafletIcon = () => {
@@ -135,10 +139,31 @@ export default function LocationMap({ vehicles }: LocationMapProps) {
                     </span>
                   </div>
 
-                  <div className="flex justify-between text-sm">
-                    <span className="font-medium">Freq. Cardíaca:</span>
-                    <span>{vehicle.heart_rate} bpm</span>
-                  </div>
+                  {vehicle.heart_rate && (
+                    <div className="flex items-center gap-1 text-sm">
+                      <Heart className="h-4 w-4 text-red-500" />
+                      <span>
+                        Freq. Cardíaca:
+                        {(() => {
+                          const filteredHeartRate = filterHeartRate(vehicle.heart_rate)
+                          const status = checkHeartRateStatus(filteredHeartRate)
+                          return (
+                            <span
+                              className={
+                                status.severity === "critical"
+                                  ? "text-red-600 font-bold"
+                                  : status.severity === "warning"
+                                    ? "text-amber-600 font-bold"
+                                    : "text-gray-700"
+                              }
+                            >
+                              {filteredHeartRate} bpm
+                            </span>
+                          )
+                        })()}
+                      </span>
+                    </div>
+                  )}
 
                   <div className="flex justify-between text-sm">
                     <span className="font-medium">Temperatura:</span>

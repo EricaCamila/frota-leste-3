@@ -5,6 +5,10 @@ import L from "leaflet"
 import "leaflet/dist/leaflet.css"
 import { useEffect, useRef } from "react"
 
+// Adicionar o import do filtro de Kalman
+import { filterHeartRate, checkHeartRateStatus } from "@/lib/kalman-filter"
+import { Heart } from "lucide-react"
+
 // Corrigir os ícones do Leaflet
 const fixLeafletIcon = () => {
   delete (L.Icon.Default.prototype as any)._getIconUrl
@@ -56,9 +60,12 @@ interface LiveTrackingProps {
     }>
   }
   currentPosition: number
+  vehicle: {
+    heart_rate: number | null
+  }
 }
 
-export default function LiveTracking({ route, currentPosition }: LiveTrackingProps) {
+export default function LiveTracking({ route, currentPosition, vehicle }: LiveTrackingProps) {
   const mapRef = useRef(null)
 
   useEffect(() => {
@@ -132,6 +139,33 @@ export default function LiveTracking({ route, currentPosition }: LiveTrackingPro
             <p className="text-sm">
               Posição {currentPosition + 1} de {route.pontos.length}
             </p>
+            {vehicle.heart_rate && (
+              <div className="flex items-center gap-1 mb-1">
+                <Heart
+                  className={`h-4 w-4 ${
+                    checkHeartRateStatus(filterHeartRate(vehicle.heart_rate)).severity === "critical"
+                      ? "text-red-500"
+                      : checkHeartRateStatus(filterHeartRate(vehicle.heart_rate)).severity === "warning"
+                        ? "text-amber-500"
+                        : "text-emerald-500"
+                  }`}
+                />
+                <span className="text-sm">
+                  Freq. Cardíaca:
+                  <span
+                    className={`font-medium ${
+                      checkHeartRateStatus(filterHeartRate(vehicle.heart_rate)).severity === "critical"
+                        ? "text-red-600"
+                        : checkHeartRateStatus(filterHeartRate(vehicle.heart_rate)).severity === "warning"
+                          ? "text-amber-600"
+                          : "text-emerald-600"
+                    }`}
+                  >
+                    {filterHeartRate(vehicle.heart_rate)} bpm
+                  </span>
+                </span>
+              </div>
+            )}
           </div>
         </Popup>
       </Marker>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { database } from "@/lib/firebase"
 import { ref, onValue, push, set, remove } from "firebase/database"
 import { Bell, X, AlertTriangle, Info, CheckCircle } from "lucide-react"
@@ -19,6 +19,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/components/ui/use-toast"
+import { filterHeartRate, checkHeartRateStatus } from "@/lib/kalman-filter"
 
 export function AlertSystem() {
   const [alerts, setAlerts] = useState([])
@@ -33,10 +34,38 @@ export function AlertSystem() {
   })
   const [vehicles, setVehicles] = useState([])
 
+  // Usar refs para evitar dependências cíclicas no useEffect
+  const alertsRef = useRef(alerts)
+  const vehiclesRef = useRef(vehicles)
+
+  // Atualizar as refs quando os estados mudarem
+  useEffect(() => {
+    alertsRef.current = alerts
+  }, [alerts])
+
+  useEffect(() => {
+    vehiclesRef.current = vehicles
+  }, [vehicles])
+
+  // Função para criar alertas de forma segura
+  const createAlert = (alertData) => {
+    // Garantir que todos os campos tenham valores válidos
+    const cleanData = Object.entries(alertData).reduce((acc, [key, value]) => {
+      if (value !== undefined) {
+        acc[key] = value
+      }
+      return acc
+    }, {})
+
+    const alertsDbRef = ref(database, "alerts")
+    const newAlertRef = push(alertsDbRef)
+    set(newAlertRef, cleanData)
+  }
+
   useEffect(() => {
     // Buscar alertas
-    const alertsRef = ref(database, "alerts")
-    const unsubscribeAlerts = onValue(alertsRef, (snapshot) => {
+    const alertsDbRef = ref(database, "alerts")
+    const unsubscribeAlerts = onValue(alertsDbRef, (snapshot) => {
       const data = snapshot.val()
       if (data) {
         const alertsList = Object.entries(data)
@@ -55,8 +84,8 @@ export function AlertSystem() {
     })
 
     // Buscar veículos para o formulário de novo alerta
-    const vehiclesRef = ref(database, "vehicles")
-    const unsubscribeVehicles = onValue(vehiclesRef, (snapshot) => {
+    const vehiclesDbRef = ref(database, "vehicles")
+    const unsubscribeVehicles = onValue(vehiclesDbRef, (snapshot) => {
       const data = snapshot.val()
       if (data) {
         const vehiclesList = Object.entries(data).map(([id, vehicle]) => ({
@@ -73,13 +102,232 @@ export function AlertSystem() {
       unsubscribeAlerts()
       unsubscribeVehicles()
     }
-  }, [])
+  }, []) // Remover dependências para evitar loops
+
+  // Separar os monitores em useEffects individuais
+  useEffect(() => {
+    // Monitorar frequência cardíaca dos motoristas (via RFID tags)
+    const rfidDbRef = ref(database, "rfid_tag_info")
+    const unsubscribeRfid = onValue(rfidDbRef, (snapshot) => {
+      const data = snapshot.val()
+      if (!data) return
+
+      // Para cada tag RFID, verificar a frequência cardíaca
+      Object.entries(data).forEach(([tagId, tagInfo]: [string, any]) => {
+        if (!tagInfo || typeof tagInfo.heart_rate === "undefined") return
+
+        // Aplicar filtro de Kalman para reduzir ruído
+        const filteredHeartRate = filterHeartRate(tagInfo.heart_rate)
+
+        // Verificar status da frequência cardíaca
+        const heartRateStatus = checkHeartRateStatus(filteredHeartRate)
+
+        // Se for crítico ou alto, criar um alerta
+        if (heartRateStatus.status === "critical" || heartRateStatus.status === "high") {
+          // Encontrar o veículo associado a esta tag
+          const vehicle = vehiclesRef.current.find((v) => v.rfid_tag === tagId)
+
+          if (vehicle) {
+            // Verificar se já existe um alerta recente para este veículo (últimos 10 minutos)
+            const recentAlert = alertsRef.current.find(
+              (a) => a.vehicleId === vehicle.id && a.type === "heart_rate" && Date.now() - a.timestamp < 10 * 60 * 1000,
+            )
+
+            if (!recentAlert) {
+              // Criar novo alerta
+              createAlert({
+                title: `Frequência Cardíaca ${heartRateStatus.status === "critical" ? "Crítica" : "Elevada"}`,
+                description: `Motorista do veículo ${vehicle.placa || "Sem placa"} com frequência cardíaca de ${filteredHeartRate} bpm`,
+                severity: heartRateStatus.severity,
+                timestamp: Date.now(),
+                read: false,
+                vehicleId: vehicle.id,
+                type: "heart_rate",
+              })
+            }
+          }
+        }
+      })
+    })
+
+    return () => {
+      unsubscribeRfid()
+    }
+  }, []) // Sem dependências para evitar loops
+
+  useEffect(() => {
+    // Monitorar nível de combustível
+    const fuelDbRef = ref(database, "fuel")
+    const unsubscribeFuel = onValue(fuelDbRef, (snapshot) => {
+      const fuelData = snapshot.val()
+      if (!fuelData) return
+
+      // Para cada veículo, verificar o último abastecimento
+      vehiclesRef.current.forEach((vehicle) => {
+        if (!vehicle || !vehicle.id) return
+
+        // Encontrar o último abastecimento deste veículo
+        const vehicleFuelEntries = Object.values(fuelData)
+          .filter((entry: any) => entry && entry.veiculoId === vehicle.id)
+          .sort((a: any, b: any) => b.data - a.data)
+
+        if (vehicleFuelEntries.length === 0) return
+
+        const lastEntry: any = vehicleFuelEntries[0]
+        if (!lastEntry.kmAtual || !lastEntry.kmAnterior || !lastEntry.litros) return
+
+        // Calcular consumo médio (km/l)
+        const kmRun = lastEntry.kmAtual - lastEntry.kmAnterior
+        if (kmRun <= 0 || lastEntry.litros <= 0) return
+
+        const avgConsumption = kmRun / lastEntry.litros
+
+        // Estimar combustível restante (baseado em um tanque médio de 60L)
+        const estimatedTankSize = 60 // litros
+        const estimatedRange = avgConsumption * estimatedTankSize // km
+        const estimatedFuelLeft = (estimatedRange - ((Date.now() - lastEntry.data) / 86400000) * 100) / estimatedRange
+
+        // Se o combustível estimado estiver abaixo de 20%, criar alerta
+        if (estimatedFuelLeft < 0.2) {
+          // Verificar se já existe um alerta recente para este veículo
+          const recentAlert = alertsRef.current.find(
+            (a) => a.vehicleId === vehicle.id && a.type === "fuel" && Date.now() - a.timestamp < 24 * 60 * 60 * 1000,
+          )
+
+          if (!recentAlert) {
+            // Criar novo alerta
+            createAlert({
+              title: "Combustível Baixo",
+              description: `Veículo ${vehicle.placa || "Sem placa"} com nível de combustível estimado abaixo de 20%`,
+              severity: "warning",
+              timestamp: Date.now(),
+              read: false,
+              vehicleId: vehicle.id,
+              type: "fuel",
+            })
+          }
+        }
+      })
+    })
+
+    return () => {
+      unsubscribeFuel()
+    }
+  }, []) // Sem dependências para evitar loops
+
+  useEffect(() => {
+    // Monitorar atrasos nas rotas
+    const routesDbRef = ref(database, "routes")
+    const unsubscribeRoutes = onValue(routesDbRef, (snapshot) => {
+      const routesData = snapshot.val()
+      if (!routesData) return
+
+      // Para cada rota ativa, verificar se está atrasada
+      Object.entries(routesData).forEach(([routeId, route]: [string, any]) => {
+        if (route.status !== "Ativa") return
+
+        // Calcular tempo estimado vs. tempo real
+        const startTime = route.startTime || route.createdAt
+        if (!startTime) return
+
+        const estimatedDuration = Number.parseInt(route.duracao) || 0 // em minutos
+        const estimatedArrival = startTime + estimatedDuration * 60 * 1000
+
+        // Se já passou do tempo estimado de chegada, criar alerta
+        if (Date.now() > estimatedArrival) {
+          // Verificar se já existe um alerta recente para esta rota
+          const recentAlert = alertsRef.current.find(
+            (a) => a.routeId === routeId && a.type === "delay" && Date.now() - a.timestamp < 30 * 60 * 1000,
+          )
+
+          if (!recentAlert) {
+            const delayMinutes = Math.floor((Date.now() - estimatedArrival) / (60 * 1000))
+
+            // Criar novo alerta
+            createAlert({
+              title: "Atraso na Rota",
+              description: `Rota ${route.nome || "Sem nome"} está atrasada em ${delayMinutes} minutos`,
+              severity: delayMinutes > 30 ? "critical" : "warning",
+              timestamp: Date.now(),
+              read: false,
+              vehicleId: route.veiculoId || null,
+              routeId: routeId,
+              type: "delay",
+            })
+          }
+        }
+      })
+    })
+
+    return () => {
+      unsubscribeRoutes()
+    }
+  }, []) // Sem dependências para evitar loops
+
+  useEffect(() => {
+    // Monitorar manutenções pendentes
+    const maintenanceDbRef = ref(database, "maintenance")
+    const unsubscribeMaintenance = onValue(maintenanceDbRef, (snapshot) => {
+      const maintenanceData = snapshot.val()
+      if (!maintenanceData) return
+
+      // Para cada manutenção agendada, verificar se está próxima
+      Object.entries(maintenanceData).forEach(([maintenanceId, maintenance]: [string, any]) => {
+        if (maintenance.status !== "Agendada") return
+
+        const maintenanceDate = maintenance.dataAgendada
+        if (!maintenanceDate) return
+
+        const daysUntilMaintenance = (maintenanceDate - Date.now()) / (24 * 60 * 60 * 1000)
+
+        // Se faltam menos de 2 dias para a manutenção, criar alerta
+        if (daysUntilMaintenance < 2 && daysUntilMaintenance > 0) {
+          // Verificar se já existe um alerta recente para esta manutenção
+          const recentAlert = alertsRef.current.find(
+            (a) =>
+              a.maintenanceId === maintenanceId &&
+              a.type === "maintenance" &&
+              Date.now() - a.timestamp < 24 * 60 * 60 * 1000,
+          )
+
+          if (!recentAlert) {
+            // Criar novo alerta
+            createAlert({
+              title: "Manutenção Próxima",
+              description: `Manutenção ${maintenance.descricao || "Sem descrição"} agendada para ${new Date(maintenance.dataAgendada).toLocaleDateString("pt-BR")}`,
+              severity: "info",
+              timestamp: Date.now(),
+              read: false,
+              vehicleId: maintenance.veiculoId || null,
+              maintenanceId: maintenanceId,
+              type: "maintenance",
+            })
+          }
+        }
+      })
+    })
+
+    return () => {
+      unsubscribeMaintenance()
+    }
+  }, []) // Sem dependências para evitar loops
 
   const handleMarkAsRead = async (alertId) => {
     try {
-      const alertRef = ref(database, `alerts/${alertId}`)
-      await set(alertRef, {
-        ...alerts.find((a) => a.id === alertId),
+      const alert = alerts.find((a) => a.id === alertId)
+      if (!alert) return
+
+      // Criar um objeto limpo sem propriedades undefined
+      const cleanAlert = Object.entries(alert).reduce((acc, [key, value]) => {
+        if (value !== undefined) {
+          acc[key] = value
+        }
+        return acc
+      }, {})
+
+      const alertDbRef = ref(database, `alerts/${alertId}`)
+      await set(alertDbRef, {
+        ...cleanAlert,
         read: true,
       })
     } catch (error) {
@@ -89,8 +337,8 @@ export function AlertSystem() {
 
   const handleDeleteAlert = async (alertId) => {
     try {
-      const alertRef = ref(database, `alerts/${alertId}`)
-      await remove(alertRef)
+      const alertDbRef = ref(database, `alerts/${alertId}`)
+      await remove(alertDbRef)
       toast({
         title: "Alerta removido",
         description: "O alerta foi removido com sucesso.",
@@ -109,10 +357,7 @@ export function AlertSystem() {
     e.preventDefault()
 
     try {
-      const alertsRef = ref(database, "alerts")
-      const newAlertRef = push(alertsRef)
-
-      await set(newAlertRef, {
+      createAlert({
         ...newAlert,
         timestamp: Date.now(),
         read: false,

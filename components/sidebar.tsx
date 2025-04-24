@@ -21,6 +21,8 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { database } from "@/lib/firebase"
+import { ref, onValue } from "firebase/database"
 
 // Contexto do Sidebar
 type SidebarContextType = {
@@ -67,6 +69,71 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
 export function Sidebar() {
   const pathname = usePathname()
   const { isOpen } = useSidebar()
+  const [counts, setCounts] = useState({
+    vehicles: 0,
+    drivers: 0,
+    maintenance: 0,
+    routes: 0,
+    alerts: 0,
+    schedules: 0,
+    fuel: 0,
+  })
+
+  useEffect(() => {
+    // Buscar contagens do banco de dados
+    const fetchCounts = () => {
+      const vehiclesRef = ref(database, "vehicles")
+      const driversRef = ref(database, "drivers")
+      const maintenanceRef = ref(database, "maintenance")
+      const routesRef = ref(database, "routes")
+      const alertsRef = ref(database, "alerts")
+      const schedulesRef = ref(database, "schedules")
+      const fuelRef = ref(database, "fuel")
+
+      onValue(vehiclesRef, (snapshot) => {
+        const data = snapshot.val()
+        setCounts((prev) => ({ ...prev, vehicles: data ? Object.keys(data).length : 0 }))
+      })
+
+      onValue(driversRef, (snapshot) => {
+        const data = snapshot.val()
+        setCounts((prev) => ({ ...prev, drivers: data ? Object.keys(data).length : 0 }))
+      })
+
+      onValue(maintenanceRef, (snapshot) => {
+        const data = snapshot.val()
+        const pendingMaintenance = data
+          ? Object.values(data).filter((m: any) => m.status === "Agendada" || m.status === "Em andamento").length
+          : 0
+        setCounts((prev) => ({ ...prev, maintenance: pendingMaintenance }))
+      })
+
+      onValue(routesRef, (snapshot) => {
+        const data = snapshot.val()
+        const activeRoutes = data ? Object.values(data).filter((r: any) => r.status === "Ativa").length : 0
+        setCounts((prev) => ({ ...prev, routes: activeRoutes }))
+      })
+
+      onValue(alertsRef, (snapshot) => {
+        const data = snapshot.val()
+        const unreadAlerts = data ? Object.values(data).filter((a: any) => !a.read).length : 0
+        setCounts((prev) => ({ ...prev, alerts: unreadAlerts }))
+      })
+
+      onValue(schedulesRef, (snapshot) => {
+        const data = snapshot.val()
+        const pendingSchedules = data ? Object.values(data).filter((s: any) => s.status === "Agendado").length : 0
+        setCounts((prev) => ({ ...prev, schedules: pendingSchedules }))
+      })
+
+      onValue(fuelRef, (snapshot) => {
+        const data = snapshot.val()
+        setCounts((prev) => ({ ...prev, fuel: data ? Object.keys(data).length : 0 }))
+      })
+    }
+
+    fetchCounts()
+  }, [])
 
   if (!isOpen) {
     return null
@@ -88,29 +155,35 @@ export function Sidebar() {
               href="/veiculos"
               icon={<Car size={18} />}
               label="Veículos"
-              count={15}
+              count={counts.vehicles}
               active={pathname.startsWith("/veiculos")}
             />
             <NavItem
               href="/motoristas"
               icon={<Users size={18} />}
               label="Motoristas"
-              count={23}
+              count={counts.drivers}
               active={pathname.startsWith("/motoristas")}
             />
             <NavItem
               href="/manutencao"
               icon={<Wrench size={18} />}
               label="Manutenção"
-              count={2}
+              count={counts.maintenance}
               active={pathname.startsWith("/manutencao")}
             />
-            <NavItem href="/rotas" icon={<MapPin size={18} />} label="Rotas" active={pathname.startsWith("/rotas")} />
+            <NavItem
+              href="/rotas"
+              icon={<MapPin size={18} />}
+              label="Rotas"
+              active={pathname.startsWith("/rotas")}
+              count={counts.routes}
+            />
             <NavItem
               href="/alertas"
               icon={<Bell size={18} />}
               label="Alertas"
-              count={3}
+              count={counts.alerts}
               active={pathname.startsWith("/alertas")}
             />
           </nav>
@@ -129,12 +202,14 @@ export function Sidebar() {
               href="/combustivel"
               icon={<Fuel size={18} />}
               label="Combustível"
+              count={counts.fuel}
               active={pathname.startsWith("/combustivel")}
             />
             <NavItem
               href="/agendamentos"
               icon={<Calendar size={18} />}
               label="Agendamentos"
+              count={counts.schedules}
               active={pathname.startsWith("/agendamentos")}
             />
           </nav>

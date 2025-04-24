@@ -4,6 +4,9 @@ import { useEffect } from "react"
 import { MapContainer, TileLayer, Marker, Popup, Polyline, useMap } from "react-leaflet"
 import L from "leaflet"
 import "leaflet/dist/leaflet.css"
+// Adicionar o import do filtro de Kalman
+import { filterHeartRate, checkHeartRateStatus } from "@/lib/kalman-filter"
+import { Heart } from "lucide-react"
 
 // Corrigir os ícones do Leaflet
 const fixLeafletIcon = () => {
@@ -58,6 +61,7 @@ interface HistoryMapProps {
     longitude: number
     is_moving: boolean
     speed?: number
+    heart_rate?: number
   }>
   vehiclePlaca: string
 }
@@ -121,6 +125,31 @@ export default function HistoryMap({ history, vehiclePlaca }: HistoryMapProps) {
               <p className="text-sm">{new Date(point.timestamp).toLocaleString("pt-BR")}</p>
               <p className="text-sm">Velocidade: {point.speed || 0} km/h</p>
               <p className="text-sm">Status: {point.is_moving ? "Em movimento" : "Parado"}</p>
+              {point.heart_rate && (
+                <div className="flex items-center gap-1 text-sm">
+                  <Heart className="h-4 w-4 text-red-500" />
+                  <span>
+                    Freq. Cardíaca:
+                    {(() => {
+                      const filteredHeartRate = filterHeartRate(point.heart_rate)
+                      const status = checkHeartRateStatus(filteredHeartRate)
+                      return (
+                        <span
+                          className={
+                            status.severity === "critical"
+                              ? "text-red-600 font-bold"
+                              : status.severity === "warning"
+                                ? "text-amber-600 font-bold"
+                                : "text-gray-700"
+                          }
+                        >
+                          {filteredHeartRate} bpm
+                        </span>
+                      )
+                    })()}
+                  </span>
+                </div>
+              )}
             </div>
           </Popup>
         </Marker>
