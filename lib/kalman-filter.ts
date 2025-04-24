@@ -1,24 +1,29 @@
 /**
- * Implementação do Filtro de Kalman para reduzir ruído em medições de frequência cardíaca
+ * Implementação do Filtro de Kalman para reduzir ruído em medições
+ *
+ * O filtro de Kalman é um algoritmo recursivo que estima o estado de um sistema dinâmico
+ * a partir de medições ruidosas. É particularmente útil para suavizar dados de sensores.
  */
-export class KalmanFilter {
-  private x: number // Estado estimado
-  private p: number // Estimativa de erro
-  private q: number // Ruído do processo
-  private r: number // Ruído da medição
+class KalmanFilter {
+  private x: number
+  private p: number
+  private q: number
+  private r: number
+  private k: number
 
   /**
-   * Inicializa um novo filtro de Kalman
-   * @param initialValue Valor inicial (opcional)
-   * @param initialError Erro inicial (opcional)
-   * @param processNoise Ruído do processo (opcional)
-   * @param measurementNoise Ruído da medição (opcional)
+   * Inicializa o filtro de Kalman
+   * @param initialValue Valor inicial estimado
+   * @param initialCovariance Covariância inicial do erro estimado
+   * @param processNoise Covariância do ruído do processo (quanto maior, mais rápido o filtro responde a mudanças)
+   * @param measurementNoise Covariância do ruído da medição (quanto maior, mais suavização)
    */
-  constructor(initialValue = 0, initialError = 1, processNoise = 0.01, measurementNoise = 1) {
+  constructor(initialValue = 0, initialCovariance = 1, processNoise = 0.01, measurementNoise = 0.1) {
     this.x = initialValue
-    this.p = initialError
+    this.p = initialCovariance
     this.q = processNoise
     this.r = measurementNoise
+    this.k = 0
   }
 
   /**
@@ -31,65 +36,47 @@ export class KalmanFilter {
     this.p = this.p + this.q
 
     // Atualização
-    const k = this.p / (this.p + this.r) // Ganho de Kalman
-    this.x = this.x + k * (measurement - this.x)
-    this.p = (1 - k) * this.p
+    this.k = this.p / (this.p + this.r)
+    this.x = this.x + this.k * (measurement - this.x)
+    this.p = (1 - this.k) * this.p
 
     return this.x
   }
 
   /**
-   * Obtém o estado atual estimado
-   * @returns Estado atual
+   * Reinicia o filtro com novos valores
+   * @param initialValue Valor inicial estimado
+   * @param initialCovariance Covariância inicial do erro estimado
    */
-  getState(): number {
-    return this.x
-  }
-
-  /**
-   * Redefine o filtro para um novo valor
-   * @param value Novo valor
-   */
-  reset(value: number): void {
-    this.x = value
-    this.p = 1
+  reset(initialValue = 0, initialCovariance = 1): void {
+    this.x = initialValue
+    this.p = initialCovariance
+    this.k = 0
   }
 }
 
-// Instância global do filtro para uso em toda a aplicação
-const kalmanFilter = new KalmanFilter(70, 1, 0.01, 2)
+// Instância do filtro de Kalman para a frequência cardíaca
+const heartRateFilter = new KalmanFilter(70, 4, 0.08, 2)
 
 /**
- * Filtra um valor de frequência cardíaca usando o filtro de Kalman
- * @param heartRate Valor de frequência cardíaca a ser filtrado
- * @returns Valor filtrado
+ * Aplica o filtro de Kalman a uma medição de frequência cardíaca
+ * @param heartRate Medição da frequência cardíaca
+ * @returns Valor filtrado da frequência cardíaca
  */
-export function filterHeartRate(heartRate: number): number {
-  if (typeof heartRate !== "number" || isNaN(heartRate)) {
-    return 0
-  }
-
-  // Se o valor for muito diferente do estado atual, resetar o filtro
-  const currentState = kalmanFilter.getState()
-  if (Math.abs(heartRate - currentState) > 30 && currentState > 0) {
-    kalmanFilter.reset(heartRate)
-  }
-
-  return Math.round(kalmanFilter.update(heartRate))
+export const filterHeartRate = (heartRate: number): number => {
+  return heartRateFilter.update(heartRate)
 }
 
 /**
- * Verifica o status da frequência cardíaca
- * @param heartRate Valor de frequência cardíaca
- * @returns Objeto com status e severidade
+ * Verifica o status da frequência cardíaca com base em limites predefinidos
+ * @param heartRate Frequência cardíaca
+ * @returns Objeto com o status e severidade
  */
-export function checkHeartRateStatus(heartRate: number): { status: string; severity: string } {
+export const checkHeartRateStatus = (heartRate: number): { status: string; severity: string } => {
   if (heartRate > 120) {
     return { status: "critical", severity: "critical" }
   } else if (heartRate > 100) {
     return { status: "high", severity: "warning" }
-  } else if (heartRate < 50) {
-    return { status: "low", severity: "warning" }
   } else {
     return { status: "normal", severity: "info" }
   }

@@ -12,6 +12,9 @@ import dynamic from "next/dynamic"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Progress } from "@/components/ui/progress"
 
+// Importar o componente EndTripDialog
+import { EndTripDialog } from "@/components/end-trip-dialog"
+
 // Importar o mapa dinamicamente para evitar problemas de SSR
 const MapWithNoSSR = dynamic(() => import("@/components/route-map"), {
   ssr: false,
@@ -35,6 +38,9 @@ export default function DetalhesRota({ params }) {
   const { id } = params
 
   useEffect(() => {
+    // Modificar a função fetchRotaData para lidar melhor com rotas não encontradas
+    // e adicionar a rota com ID -OOIuDQy4plJvCSDnHL5
+
     const fetchRotaData = async () => {
       try {
         // Simular busca de dados da rota
@@ -92,9 +98,39 @@ export default function DetalhesRota({ params }) {
             ],
             createdAt: 1745164494862,
           },
+          "-OOIuDQy4plJvCSDnHL5": {
+            nome: "Rota de Transferência de Pacientes",
+            origem: "Hospital Municipal",
+            destino: "Hospital Especializado",
+            distancia: "15.3 km",
+            duracao: "30 min",
+            status: "Ativa",
+            veiculoId: "-OOIuDQy4plJvCSDnHLF",
+            pontos: [
+              { latitude: 2.836625333, longitude: -60.691402333 },
+              { latitude: 2.846625333, longitude: -60.681402333 },
+              { latitude: 2.856625333, longitude: -60.671402333 },
+              { latitude: 2.866625333, longitude: -60.661402333 },
+              { latitude: 2.876625333, longitude: -60.651402333 },
+            ],
+            createdAt: 1745164494862,
+          },
         }
 
-        const rotaData = rotasSimuladas[id]
+        // Tentar obter a rota pelo ID
+        let rotaData = rotasSimuladas[id]
+
+        // Se não encontrar pelo ID direto, verificar se é um dos IDs simulados
+        if (!rotaData) {
+          // Verificar se o ID está no formato -OOIuDQy4plJvCSDnHL5
+          if (id.startsWith("-")) {
+            // Tentar encontrar a rota pelo ID
+            rotaData = rotasSimuladas[id]
+          } else {
+            // Tentar encontrar a rota pelo ID simulado (route1, route2, etc.)
+            rotaData = rotasSimuladas[id]
+          }
+        }
 
         if (!rotaData) {
           toast({
@@ -211,10 +247,29 @@ export default function DetalhesRota({ params }) {
           Voltar
         </Button>
         <h1 className="text-2xl font-bold">Detalhes da Rota</h1>
-        <Button variant="outline" onClick={() => router.push(`/rotas/editar/${id}`)} className="ml-auto">
-          <Edit className="mr-2 h-4 w-4" />
-          Editar
-        </Button>
+        <div className="ml-auto flex gap-2">
+          <Button variant="outline" onClick={() => router.push(`/rotas/editar/${id}`)}>
+            <Edit className="mr-2 h-4 w-4" />
+            Editar
+          </Button>
+          {rota.status === "Ativa" && (
+            <EndTripDialog
+              routeId={id}
+              routeName={rota.nome}
+              vehicleId={rota.veiculoId}
+              vehiclePlate={veiculo?.placa || ""}
+              onTripEnded={() => {
+                // Atualizar o estado local
+                setRota((prev) => ({ ...prev, status: "Concluída" }))
+                // Mostrar toast
+                toast({
+                  title: "Viagem encerrada",
+                  description: "A rota foi concluída com sucesso.",
+                })
+              }}
+            />
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -421,7 +476,11 @@ export default function DetalhesRota({ params }) {
             </CardHeader>
             <CardContent>
               <div className="h-[400px] rounded-lg overflow-hidden border">
-                <LiveTracking route={rota} currentPosition={currentPosition} />
+                <LiveTracking
+                  route={rota}
+                  currentPosition={currentPosition}
+                  vehicle={rfidData ? { heart_rate: rfidData.heart_rate } : { heart_rate: null }}
+                />
               </div>
             </CardContent>
           </Card>

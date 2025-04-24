@@ -65,6 +65,8 @@ interface LiveTrackingProps {
   }
 }
 
+// Corrigir o componente LiveTracking para lidar com a propriedade vehicle que pode ser null
+
 export default function LiveTracking({ route, currentPosition, vehicle }: LiveTrackingProps) {
   const mapRef = useRef(null)
 
@@ -139,7 +141,7 @@ export default function LiveTracking({ route, currentPosition, vehicle }: LiveTr
             <p className="text-sm">
               Posição {currentPosition + 1} de {route.pontos.length}
             </p>
-            {vehicle.heart_rate && (
+            {vehicle && vehicle.heart_rate && (
               <div className="flex items-center gap-1 mb-1">
                 <Heart
                   className={`h-4 w-4 ${
