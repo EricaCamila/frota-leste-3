@@ -3,6 +3,8 @@
 [![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/ericamila02-gmailcoms-projects/v0-frota-leste-3)
 [![Built with v0](https://img.shields.io/badge/Built%20with-v0.dev-black?style=for-the-badge)](https://v0.dev/chat/projects/U8VxdFHRcnv)
 
+[Acessar https://v0-frota-leste-3.vercel.app](https://v0-frota-leste-3.vercel.app)
+
 # Frota Leste - Sistema de Monitoramento de Frota Hospitalar
 
 Este é um sistema para monitoramento de frota hospitalar com cadastro de veículos, motoristas e informações como localização, consumo de combustível, manutenção de veículos, trajetos e rotas.
