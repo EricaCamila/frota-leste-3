@@ -9,6 +9,9 @@
 
 Este é um sistema para monitoramento de frota hospitalar com cadastro de veículos, motoristas e informações como localização, consumo de combustível, manutenção de veículos, trajetos e rotas.
 
+![Captura de tela 2025-04-26 092042](https://github.com/user-attachments/assets/23f44b50-8bce-4774-8efe-62b845f999de)
+
+
 ## Pré-requisitos
 
 *   Node.js (v18 ou superior)
